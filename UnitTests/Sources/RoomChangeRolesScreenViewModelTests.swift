@@ -6,6 +6,7 @@
 // Please see LICENSE files in the repository root for full details.
 //
 
+import Combine
 @testable import ElementX
 import Testing
 
@@ -161,6 +162,33 @@ struct RoomChangeRolesScreenViewModelTests {
         #expect(roomProxy.updatePowerLevelsForUsersReceivedUpdates?.count == 2)
         #expect(roomProxy.updatePowerLevelsForUsersReceivedUpdates?.contains { $0.userID == existingModerator.id && $0.powerLevel == 0 } == true)
         #expect(roomProxy.updatePowerLevelsForUsersReceivedUpdates?.contains { $0.userID == firstUser.id && $0.powerLevel == 50 } == true)
+    }
+    
+    @Test
+    mutating func saveDemotionUsesUsersDefault() async throws {
+        // Given the change roles view model for moderators in a room where users_default isn't 0.
+        setup(mode: .moderator)
+        let powerLevels = try #require(roomProxy.infoPublisher.value.powerLevels as? RoomPowerLevelsProxyMock)
+        powerLevels.values.usersDefault = 10
+        
+        let updatesSubject = PassthroughSubject<[(userID: String, powerLevel: Int64)], Never>()
+        roomProxy.updatePowerLevelsForUsersClosure = { updates in
+            updatesSubject.send(updates)
+            return .success(())
+        }
+        
+        let existingModerator = try #require(context.viewState.membersWithRole.first { $0.role == .moderator },
+                                             "There should be a moderator to begin with.")
+        
+        // When demoting the moderator.
+        let deferred = deferFulfillment(updatesSubject) { _ in true }
+        context.send(viewAction: .toggleMember(existingModerator))
+        context.send(viewAction: .save)
+        let updates = try await deferred.fulfill()
+        
+        // Then the moderator should be returned to the room's default power level.
+        #expect(updates.count == 1)
+        #expect(updates.contains { $0.userID == existingModerator.id && $0.powerLevel == 10 })
     }
     
     @Test
