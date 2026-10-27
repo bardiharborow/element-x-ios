@@ -433,6 +433,45 @@ final class SecurityAndPrivacyScreenViewModelTests {
         try await deferred.fulfill()
     }
     
+    @Test
+    func changingToInviteOnlyHidesRoomFromDirectory() async throws {
+        setupViewModel(joinedParentSpaces: [], joinRule: .public, isVisibleInRoomDirectory: true)
+        
+        let deferred = deferScreenLoaded { $0.currentSettings.isVisibileInRoomDirectory == true }
+        try await deferred.fulfill()
+        
+        context.desiredSettings.accessType = .inviteOnly
+        
+        await waitForConfirmation("Room directory visibility has updated") { confirm in
+            roomProxy.updateRoomDirectoryVisibilityClosure = { visibility in
+                #expect(visibility == .private)
+                confirm()
+                return .success(())
+            }
+            context.send(viewAction: .save)
+        }
+    }
+    
+    @Test
+    func changingToPublicKeepsRoomDirectoryChoice() async throws {
+        setupViewModel(joinedParentSpaces: [], joinRule: .invite, isVisibleInRoomDirectory: false)
+        
+        let deferred = deferScreenLoaded { $0.currentSettings.isVisibileInRoomDirectory == false }
+        try await deferred.fulfill()
+        
+        context.desiredSettings.accessType = .anyone
+        context.desiredSettings.isVisibileInRoomDirectory = true
+        
+        await waitForConfirmation("Room directory visibility has updated") { confirm in
+            roomProxy.updateRoomDirectoryVisibilityClosure = { visibility in
+                #expect(visibility == .public)
+                confirm()
+                return .success(())
+            }
+            context.send(viewAction: .save)
+        }
+    }
+    
     // MARK: - Helpers
     
     /// Waits for `condition` **and** for the screen to have finished loading.
@@ -446,14 +485,15 @@ final class SecurityAndPrivacyScreenViewModelTests {
     
     private func setupViewModel(joinedParentSpaces: [SpaceServiceRoom],
                                 topLevelSpaces: [SpaceServiceRoom] = [],
-                                joinRule: ElementX.JoinRule) {
+                                joinRule: ElementX.JoinRule,
+                                isVisibleInRoomDirectory: Bool = true) {
         let userSettings = UserSettings.mock()
         userSettings.app.knockingEnabled = true
         roomProxy = JoinedRoomProxyMock(.init(isEncrypted: false,
                                               canonicalAlias: "#room:matrix.org",
                                               members: .allMembersAsCreator,
                                               joinRule: joinRule,
-                                              isVisibleInPublicDirectory: true))
+                                              isVisibleInPublicDirectory: isVisibleInRoomDirectory))
         roomProxy.updateJoinRuleReturnValue = .success(())
         roomProxy.updateRoomDirectoryVisibilityReturnValue = .success(())
         
